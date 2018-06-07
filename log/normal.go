@@ -2,44 +2,57 @@ package log
 
 import (
 	"github.com/op/go-logging"
+	"io"
 	syslog "log"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
 var format string = "%{level}: [%{time:2006-01-02 15:04:05.000}][%{pid}][%{module}][%{shortfile}(%{shortfunc})][%{message}]"
 
+var servername string
+
 func init() {
-	var servername string
 	if i := strings.LastIndex(os.Args[0], "/"); i >= 0 {
 		i++
 		servername = os.Args[0][i:]
 	} else {
 		servername = os.Args[0]
 	}
-	Gen(servername, "./", servername +".log")
+	//default output
+	initLog(os.Stdout, os.Stdout, format)
 }
 
-func Gen(servername, dirname, filename string) {
+func Gen(servername, filename string) {
+	dirname := filepath.Dir(filename)
+	filename = filepath.Base(filename)
 	InitLog(servername, dirname, filename, format)
 }
 
+//user-defined output
 func InitLog(servername, dirname, filename, logFormat string) {
-	os.MkdirAll(dirname, 0777)
-	info_log_fp, err := NewFileLogWriter(dirname+"/"+filename, true, 1024*1024*1024)
-	if err != nil {
-		syslog.Fatalf("open file[%s] failed[%s]", filename, err)
-		return
-	}
+	if dirname != "" && filename != "" && filename != "." {
+		os.MkdirAll(dirname, 0777)
+		info_log_fp, err := NewFileLogWriter(dirname+"/"+filename, true, 1024*1024*1024)
+		if err != nil {
+			syslog.Fatalf("open file[%s] failed[%s]", filename, err)
+			return
+		}
 
-	err_log_fp, err := NewFileLogWriter(dirname+"/"+filename+".wf", true, 1024*1024*1024)
-	if err != nil {
-		syslog.Fatalf("open file[%s.wf] failed[%s]", filename, err)
-		return
+		err_log_fp, err := NewFileLogWriter(dirname+"/"+filename+".wf", true, 1024*1024*1024)
+		if err != nil {
+			syslog.Fatalf("open file[%s.wf] failed[%s]", filename, err)
+			return
+		}
+		logging.Reset()
+		initLog(info_log_fp, err_log_fp, logFormat)
 	}
+}
 
-	backend_info := logging.NewLogBackend(info_log_fp, "", 0)
-	backend_err := logging.NewLogBackend(err_log_fp, "", 0)
+func initLog(infoWriter, errWriter io.Writer, logFormat string) {
+	backend_info := logging.NewLogBackend(infoWriter, "", 0)
+	backend_err := logging.NewLogBackend(errWriter, "", 0)
 	format := logging.MustStringFormatter(logFormat)
 	backend_info_formatter := logging.NewBackendFormatter(backend_info, format)
 	backend_err_formatter := logging.NewBackendFormatter(backend_err, format)
